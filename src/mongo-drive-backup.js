@@ -8,30 +8,33 @@
 
     function backupDb(dbOptions, driveOptions, onSuccessCallback, onErrorCallback) {
       // Dump the DB
-      mongoWrapper.getMongoDump(db.Options.host, db.Options.port, db.Options.db, db.Options.username, db.Options.password, true, (dumpOutput) => {
+      mongoWrapper.getMongoDump(dbOptions.host, dbOptions.port, dbOptions.db, dbOptions.username, dbOptions.password, true, (dumpOutput) => {
         // Upload the archived dump
         driveWrapper.uploadFile(dumpOutput, 'application/gzip', (file) => {
           // Share the archived dump with the actual user (can't get impersonation to work)
-          driveWrapper.shareFile(file.id, 'writer', driveOptions.userToShareWith, () => {
-            var rmDumpProcess = _childProcess.spawn(`rm ${dumpOutput}`, args);
-            rmDumpProcess.stdout.on('data', function(data) {
-              console.log(`stdout: ${data}`);
+          // Wait 2s for the next request so we dont overload the free api
+          setTimeout(function() {
+            driveWrapper.shareFile(file.id, 'writer', driveOptions.userToShareWith, () => {
+              var rmDumpProcess = _childProcess.spawn(`rm ${dumpOutput}`, args);
+              rmDumpProcess.stdout.on('data', function(data) {
+                console.log(`stdout: ${data}`);
+              });
+        
+              var err = '';
+              rmDumpProcess.stderr.on('data', function(data) {
+                err += data;
+              });
+        
+              rmDumpProcess.on('close', (code) => {
+                if (err !== '') {
+                  return onErrorCallback(new Error(err));
+                }
+                return onSuccessCallback();
+              });
+            }, (shareErr) => {
+              onErrorCallback(shareErr);
             });
-      
-            var err = '';
-            rmDumpProcess.stderr.on('data', function(data) {
-              err += data;
-            });
-      
-            rmDumpProcess.on('close', (code) => {
-              if (err !== '') {
-                return onErrorCallback(new Error(err));
-              }
-              return onSuccessCallback();
-            });
-          }, (shareErr) => {
-            onErrorCallback(shareErr);
-          });
+          }, 2000);
         }, (uploadErr) => {
           onErrorCallback(uploadErr);
         });
